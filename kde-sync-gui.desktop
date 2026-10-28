@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Exec=kde-sync-gui --minimized
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=KDE Plasma Sync GUI
+Comment=KDE Plasma Backup & Sync GUI Tool
+Icon=preferences-desktop-wallpaper
+Categories=System;Utility;
+StartupNotify=false
+Terminal=false
