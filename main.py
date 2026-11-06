@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QIcon, QFont, QAction, QPixmap
 
 import config_manager
+from progress import decode_progress
 
 # Ensure paths are correct (resolve relative to this script's directory)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -818,23 +819,24 @@ class KdeSyncGUI(QMainWindow):
                     self.set_pill_state(i, "pending")
         self.operation_card.setVisible(True)
 
-    def on_progress_step(self, step, total, phase, detail):
+    def on_progress_step(self, step, total, phase, detail, icon=None):
         self.lbl_op_step_badge.setText(f"Schritt {step} von {total}")
         self.lbl_phase_title.setText(phase)
         self.lbl_phase_detail.setText(detail)
 
-        # Icon mapping basierend auf Phasen-Namen
-        icon = "⚙️"
-        if "Plasma" in phase or "Desktop" in phase:
-            icon = "🖥️"
-        elif "Hintergrund" in phase or "Wallpaper" in phase:
-            icon = "🖼️"
-        elif "Theme" in phase or "Design" in phase:
-            icon = "🎨"
-        elif "Archiv" in phase or "Datei" in phase or "entpack" in phase:
-            icon = "📦"
-        elif "Vorbereit" in phase or "Prüf" in phase:
-            icon = "🔍"
+        # Nur alte Freitext-Ereignisse benötigen die sprachabhängige Zuordnung.
+        if icon is None:
+            icon = "⚙️"
+            if "Plasma" in phase or "Desktop" in phase:
+                icon = "🖥️"
+            elif "Hintergrund" in phase or "Wallpaper" in phase:
+                icon = "🖼️"
+            elif "Theme" in phase or "Design" in phase:
+                icon = "🎨"
+            elif "Archiv" in phase or "Datei" in phase or "entpack" in phase:
+                icon = "📦"
+            elif "Vorbereit" in phase or "Prüf" in phase:
+                icon = "🔍"
         self.lbl_phase_icon.setText(icon)
 
         pct = int((step / max(total, 1)) * 95)
@@ -1890,6 +1892,16 @@ class KdeSyncGUI(QMainWindow):
         cleaned = clean_ansi(text)
         for line in cleaned.splitlines():
             line_str = line.strip()
+            event = decode_progress(line_str)
+            if event is not None:
+                step, total, icon, phase, detail = event
+                if step is None:
+                    self.on_progress_done(phase, detail)
+                    self.inline_log_output.appendPlainText(f"\n{icon} {phase}: {detail}")
+                else:
+                    self.on_progress_step(step, total, phase, detail, icon=icon)
+                    self.inline_log_output.appendPlainText(f"[{step}/{total}] {phase}: {detail}")
+                continue
             if "::PROGRESS::" in line_str:
                 idx = line_str.find("::PROGRESS::")
                 marker = line_str[idx + len("::PROGRESS::"):]

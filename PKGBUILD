@@ -9,10 +9,11 @@ license=('GPL')
 depends=('python-pyqt6' 'qt6-base' 'bash' 'tar')
 source=("main.py"
         "config_manager.py"
+        "progress.py"
         "style.qss"
         "kde_sync.sh"
         "kde-sync-gui.desktop")
-sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 check() {
     QT_QPA_PLATFORM=offscreen python3 -m unittest discover "${startdir}/tests"
@@ -23,6 +24,7 @@ package() {
     install -d "${pkgdir}/opt/kde-sync-gui"
     install -m755 "${srcdir}/main.py" "${pkgdir}/opt/kde-sync-gui/main.py"
     install -m644 "${srcdir}/config_manager.py" "${pkgdir}/opt/kde-sync-gui/config_manager.py"
+    install -m644 "${srcdir}/progress.py" "${pkgdir}/opt/kde-sync-gui/progress.py"
     install -m644 "${srcdir}/style.qss" "${pkgdir}/opt/kde-sync-gui/style.qss"
     install -m755 "${srcdir}/kde_sync.sh" "${pkgdir}/opt/kde-sync-gui/kde_sync.sh"
     

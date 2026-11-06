@@ -239,17 +239,20 @@ class TestBackup(ScriptTestCase):
         res = self.run_script("backup", cwd=read_only)
         self.assertNotEqual(res.returncode, 0, res.stdout)
         self.assertNotIn("Backup erfolgreich erstellt", res.stdout)
-        self.assertNotIn("::PROGRESS::DONE", res.stdout)
+        self.assertNotIn("::PROGRESS_V2::backup.done", res.stdout)
         self.assertEqual(os.listdir(read_only), [])
 
     def test_backup_progress_markers_emitted(self):
         res = self.run_script("backup")
-        out = res.stdout
-        self.assertIn("::PROGRESS::1::4::Plasma Desktop::", out)
-        self.assertIn("::PROGRESS::2::4::Hintergrundbild::", out)
-        self.assertIn("::PROGRESS::3::4::Themes & Design::", out)
-        self.assertIn("::PROGRESS::4::4::Archivierung::", out)
-        self.assertIn("::PROGRESS::DONE::", out)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        events = [line for line in res.stdout.splitlines() if line.startswith("::PROGRESS_V2::")]
+        self.assertEqual(events, [
+            "::PROGRESS_V2::backup.desktop",
+            "::PROGRESS_V2::backup.wallpapers",
+            "::PROGRESS_V2::backup.themes",
+            "::PROGRESS_V2::backup.archive",
+            "::PROGRESS_V2::backup.done::" + os.path.join(self.out, self.archives()[0]),
+        ])
 
 
 class TestRestore(ScriptTestCase):
@@ -290,6 +293,14 @@ class TestRestore(ScriptTestCase):
         start = next(i for i, c in enumerate(calls) if c.startswith("systemctl --user start"))
         self.assertLess(stop, start)
         self.assertFalse([c for c in calls if c.startswith("sudo")], "kein sudo im Test")
+        events = [line for line in res.stdout.splitlines() if line.startswith("::PROGRESS_V2::")]
+        self.assertEqual(events, [
+            "::PROGRESS_V2::restore.prepare",
+            "::PROGRESS_V2::restore.extract",
+            "::PROGRESS_V2::restore.wallpapers",
+            "::PROGRESS_V2::restore.desktop",
+            "::PROGRESS_V2::restore.done",
+        ])
 
     def test_restore_skips_machine_bound_files_from_old_archives(self):
         archive = self.make_archive({

@@ -337,7 +337,7 @@ collect_backup_set() {
     local manifest_path="${2:-$MANIFEST_FILE}"
     local quiet="${3:-false}"
 
-    [ "$quiet" = "true" ] || echo "::PROGRESS::1::4::Plasma Desktop::Sammle KDE-Konfigurationen, Widgets und Panels..."
+    [ "$quiet" = "true" ] || echo "::PROGRESS_V2::backup.desktop"
     [ "$quiet" = "true" ] || echo "Sammle KDE-Konfigurationen, Themes und Daten..."
 
     # 1. Basis-Konfigurationsdateien
@@ -377,11 +377,11 @@ collect_backup_set() {
 
     # 4. Individuell gesetzte Hintergrundbilder (Desktop + Sperrbildschirm),
     #    auch außerhalb der Standardordner (z.B. ~/Bilder, ~/Nextcloud/...)
-    [ "$quiet" = "true" ] || echo "::PROGRESS::2::4::Hintergrundbild::Suche aktive Desktop- und Sperrbildschirm-Hintergründe..."
+    [ "$quiet" = "true" ] || echo "::PROGRESS_V2::backup.wallpapers"
     collect_wallpapers "$file_list" "$quiet"
 
     # 5. Manifest der aktiven Themes für den Abhängigkeits-Check beim Restore
-    [ "$quiet" = "true" ] || echo "::PROGRESS::3::4::Themes & Design::Erfasse Farbschemata, Kvantum-, GTK- und Icon-Themes..."
+    [ "$quiet" = "true" ] || echo "::PROGRESS_V2::backup.themes"
     generate_manifest "$manifest_path" "$quiet"
     echo "$manifest_path" >> "$file_list"
 
@@ -452,7 +452,7 @@ backup() {
     # Pfade relativ machen
     sed -i "s|^$HOME/||" "$FILE_LIST"
 
-    echo "::PROGRESS::4::4::Archivierung::Komprimiere Backup und speichere im Sync-Ordner..."
+    echo "::PROGRESS_V2::backup.archive"
     echo "Erstelle Archiv: $BACKUP_NAME ..."
     # --ignore-failed-read: Dateien, die zwischen Sammeln und Packen verschwinden
     # (Temp-Dateien), sind nur Warnungen. Exit 1 = "Datei änderte sich beim Lesen".
@@ -473,7 +473,7 @@ backup() {
         echo "❌ Backup fehlgeschlagen: Archiv konnte nicht unter dem Endnamen abgelegt werden."
         exit 1
     fi
-    echo "::PROGRESS::DONE::Backup erfolgreich erstellt!::Datei: $(pwd)/$BACKUP_NAME"
+    echo "::PROGRESS_V2::backup.done::$(pwd)/$BACKUP_NAME"
     echo "✅ Backup erfolgreich erstellt! Datei: $(pwd)/$BACKUP_NAME"
 }
 
@@ -672,7 +672,7 @@ restore() {
         exit 1
     fi
 
-    echo "::PROGRESS::1::4::Vorbereitung::Prüfe Archiv, lese Theme-Manifest und System-Abhängigkeiten..."
+    echo "::PROGRESS_V2::restore.prepare"
     # 0. Archiv zuerst prüfen. Ein beschädigtes Archiv darf weder Dateien anfassen
     #    noch die Plasma-Oberfläche neu starten.
     local listing
@@ -695,7 +695,7 @@ restore() {
         tar_excludes+=("--exclude=$pat")
     done
 
-    echo "::PROGRESS::2::4::Dateien einspielen::Entpacke Konfigurationen, Widgets und Themes..."
+    echo "::PROGRESS_V2::restore.extract"
     echo "Stelle Backup aus '$BACKUP_FILE' her..."
 
     # 2. plasmashell vor dem Entpacken beenden: Es schreibt seine Konfiguration beim
@@ -715,7 +715,7 @@ restore() {
         exit 1
     fi
 
-    echo "::PROGRESS::3::4::Hintergrundbild & Schriften::Richte Hintergrundbild ein und aktualisiere Font-Cache..."
+    echo "::PROGRESS_V2::restore.wallpapers"
     # 3. Font-Cache nur aktualisieren, wenn das Archiv Schriften enthielt
     if grep -q '^\.local/share/fonts/' "$listing" && command -v fc-cache &>/dev/null; then
         fc-cache -f &>/dev/null
@@ -723,14 +723,14 @@ restore() {
     rm -f "$listing"
 
     echo "✅ Backup erfolgreich entpackt!"
-    echo "::PROGRESS::4::4::Plasma Desktop::Starte Plasma Desktop neu und wende Layouts an..."
+    echo "::PROGRESS_V2::restore.desktop"
     echo "🔄 Starte KDE Plasma neu, um Theme, Wallpaper und Layouts anzuwenden..."
 
     # 4. KDE wieder starten
     start_plasmashell
     qdbus org.kde.KWin /KWin reconfigure 2>/dev/null || qdbus6 org.kde.KWin /KWin reconfigure 2>/dev/null
 
-    echo "::PROGRESS::DONE::Wiederherstellung erfolgreich abgeschlossen!::Plasma Desktop & Layouts geladen."
+    echo "::PROGRESS_V2::restore.done"
     echo "========================================================================="
     echo "🎉 Fertig! Alle Einstellungen, Plasmoids, Wallpaper und Themes wurden geladen."
     echo "WICHTIG: Bitte melde dich einmal vom System ab (Logout) und wieder an,"
