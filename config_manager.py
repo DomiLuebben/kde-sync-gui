@@ -24,6 +24,7 @@ def _default_backup_dir():
 
 DEFAULT_CONFIG = {
     "backup_dir": _default_backup_dir(),
+    "language": "system",
     "last_applied_backup": "",
     "check_interval_hours": 2,
     "periodic_check_enabled": True,

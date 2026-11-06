@@ -44,8 +44,15 @@ class TestConfigManager(unittest.TestCase):
         cfg = config_manager.load_config()
         self.assertEqual(cfg["backup_dir"], "/x")
         self.assertIn("auto_snapshot_ignore_dock", cfg)
+        self.assertEqual(cfg["language"], "system")
         with open(config_manager.CONFIG_FILE) as f:
-            self.assertIn("fingerprint_version", json.load(f))
+            saved = json.load(f)
+        self.assertIn("fingerprint_version", saved)
+        self.assertEqual(saved["language"], "system")
+
+    def test_existing_language_preference_is_preserved(self):
+        config_manager.save_config({"language": "en", "backup_dir": "/x"})
+        self.assertEqual(config_manager.load_config()["language"], "en")
 
     def test_save_is_atomic_and_leaves_no_temp_files(self):
         config_manager.save_config({"a": 1})
