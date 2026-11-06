@@ -1,6 +1,6 @@
 # Maintainer: Domi <domi@local>
 pkgname=kde-sync-gui
-pkgver=1.4.0
+pkgver=1.5.0
 pkgrel=1
 pkgdesc="A modern PyQt6 GUI for KDE Plasma Backup & Sync via any synced cloud folder (Nextcloud, Google Drive, OneDrive, Dropbox, Syncthing, ...)"
 arch=('any')
