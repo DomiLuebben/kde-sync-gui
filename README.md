@@ -15,40 +15,10 @@ own state) are listed in `EXCLUDE_PATTERNS` in `kde_sync.sh`. Add more, one patt
 
 ## Interface language
 
-The interface supports German and English. Under **Settings → Appearance → Language**
-(German: **Einstellungen → Darstellung → Sprache**), choose the system language, German, or English, then save
-and restart the application. Use **Quit / Beenden** in the tray menu to exit completely;
-closing the window normally leaves the application running in the tray.
+German and English are available under **Settings → Appearance → Language**
+(**Einstellungen → Darstellung → Sprache**). Save your choice, quit through the tray
+menu, and reopen the application to apply it.
 
-The default follows Qt's ordered system UI language preferences. If none of them is
-supported, English is used. The preference is stored as `language` (`system`, `de`, or
-`en`) in `~/.config/kde-sync-gui/config.json`; existing configurations gain `system`
-automatically. German is the source language and the fallback if the English catalog
-is missing or cannot be loaded (a warning is printed).
-
-The GUI, notifications, change summaries, and structured backup/restore progress are
-translated. Raw `kde_sync.sh` diagnostic logs and command-line help remain German;
-messages from external commands use those commands' own locale settings. Backup
-formats, configuration keys, filenames, and fingerprints are not translated.
-
-### Running from a checkout
-
-Install Python/PyQt6 and Qt 6 Linguist tools. On Arch Linux these are provided by
-`python-pyqt6` and `qt6-tools`; install `qt6-translations` for Qt's standard German
-dialogs and buttons. Compile the English catalog before starting:
-
-```sh
-lrelease6 kde_sync_en.ts -qm kde_sync_en.qm
-python3 main.py
-```
-
-Some distributions call the compiler `lrelease` instead of `lrelease6`; use the Qt 6
-version. `makepkg -f` compiles and installs the catalog automatically. Generated `.qm`
-files are not committed.
-
-## Contributing translations
-
-See [TRANSLATING.md](TRANSLATING.md) for marking strings, updating catalogs, adding
-languages, and testing translations.
+For running from source or contributing translations, see [TRANSLATING.md](TRANSLATING.md).
 
 See `REVIEW_2026-10-28.md` for the review behind version 1.4.0.
