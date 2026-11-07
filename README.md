@@ -13,4 +13,12 @@ Files that never go into a snapshot (KDE Connect keys, monitor layout, power pro
 own state) are listed in `EXCLUDE_PATTERNS` in `kde_sync.sh`. Add more, one pattern per line, in
 `~/.config/kde-sync-gui/exclude.list`.
 
+## Interface language
+
+German and English are available under **Settings → Appearance → Language**
+(**Einstellungen → Darstellung → Sprache**). Save your choice, quit through the tray
+menu, and reopen the application to apply it.
+
+For running from source or contributing translations, see [TRANSLATING.md](TRANSLATING.md).
+
 See `REVIEW_2026-10-28.md` for the review behind version 1.4.0.

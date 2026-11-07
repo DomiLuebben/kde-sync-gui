@@ -3,3 +3,4 @@ __pycache__/
 *.pkg.tar.zst
 /pkg/
 /src/
+/*.qm

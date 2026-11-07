@@ -10,17 +10,22 @@ import shutil
 import threading
 from datetime import datetime
 
-from PyQt6.QtCore import QThread, pyqtSignal, QTimer, Qt, QSize, QFileSystemWatcher
+from PyQt6.QtCore import (
+    QThread, pyqtSignal, QTimer, Qt, QSize, QFileSystemWatcher,
+    QCoreApplication, QT_TRANSLATE_NOOP
+)
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QPushButton, QLabel, QPlainTextEdit, QLineEdit,
     QListWidget, QListWidgetItem, QFileDialog, QMessageBox, QDialog,
     QCheckBox, QGroupBox, QFormLayout, QSystemTrayIcon, QMenu,
-    QProgressBar, QStyle, QSpinBox
+    QProgressBar, QStyle, QSpinBox, QComboBox
 )
 from PyQt6.QtGui import QIcon, QFont, QAction, QPixmap
 
 import config_manager
+from i18n import install_translations
+from progress import decode_progress
 
 # Ensure paths are correct (resolve relative to this script's directory)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -50,11 +55,16 @@ BACKUP_NAME_RE = re.compile(r"^kde_plasma_backup_\d{8}_\d{6}\.tar\.gz$")
 
 
 def format_size(bytes_size):
-    for unit in ['B', 'KB', 'MB', 'GB']:
+    for unit in [
+        QCoreApplication.translate("Formatting", "B"),
+        QCoreApplication.translate("Formatting", "KB"),
+        QCoreApplication.translate("Formatting", "MB"),
+        QCoreApplication.translate("Formatting", "GB"),
+    ]:
         if bytes_size < 1024:
-            return f"{bytes_size:.1f} {unit}"
+            return QCoreApplication.translate("Formatting", "{size:.1f} {unit}").format(size=bytes_size, unit=unit)
         bytes_size /= 1024
-    return f"{bytes_size:.1f} TB"
+    return QCoreApplication.translate("Formatting", "{size:.1f} TB").format(size=bytes_size)
 
 
 def clean_ansi(text):
@@ -66,32 +76,32 @@ def clean_ansi(text):
 
 # Klartext-Namen für die Werte aus dem Manifest (S-Zeilen der Zustandsdatei).
 SEMANTIC_LABELS = {
-    "WALLPAPER": "das Hintergrundbild",
-    "LOCK_WALLPAPER": "das Bild des Sperrbildschirms",
-    "ICON_THEME": "das Icon-Design",
-    "GTK_ICON_THEME": "das GTK-Icon-Design",
-    "GTK_THEME": "das GTK-Design",
-    "CURSOR_THEME": "den Mauszeiger",
-    "KVANTUM_THEME": "das Kvantum-Design",
-    "COLOR_SCHEME": "das Farbschema",
-    "WIDGET_STYLE": "den Bedienelement-Stil",
-    "PLASMA_THEME": "das Plasma-Design",
-    "DECORATION": "die Fensterdekoration",
-    "USES_LATTE": "die Latte-Dock-Nutzung",
+    "WALLPAPER": QT_TRANSLATE_NOOP("Changes", "das Hintergrundbild"),
+    "LOCK_WALLPAPER": QT_TRANSLATE_NOOP("Changes", "das Bild des Sperrbildschirms"),
+    "ICON_THEME": QT_TRANSLATE_NOOP("Changes", "das Icon-Design"),
+    "GTK_ICON_THEME": QT_TRANSLATE_NOOP("Changes", "das GTK-Icon-Design"),
+    "GTK_THEME": QT_TRANSLATE_NOOP("Changes", "das GTK-Design"),
+    "CURSOR_THEME": QT_TRANSLATE_NOOP("Changes", "den Mauszeiger"),
+    "KVANTUM_THEME": QT_TRANSLATE_NOOP("Changes", "das Kvantum-Design"),
+    "COLOR_SCHEME": QT_TRANSLATE_NOOP("Changes", "das Farbschema"),
+    "WIDGET_STYLE": QT_TRANSLATE_NOOP("Changes", "den Bedienelement-Stil"),
+    "PLASMA_THEME": QT_TRANSLATE_NOOP("Changes", "das Plasma-Design"),
+    "DECORATION": QT_TRANSLATE_NOOP("Changes", "die Fensterdekoration"),
+    "USES_LATTE": QT_TRANSLATE_NOOP("Changes", "die Latte-Dock-Nutzung"),
 }
 
 BACKUP_STEPS = [
-    ("🖥️", "Plasma Desktop", "Panels, Widgets & Desktop-Konfigurationen erfassen"),
-    ("🖼️", "Hintergrundbild", "Aktive Desktop- & Sperrbildschirm-Hintergründe sammeln"),
-    ("🎨", "Themes & Design", "Farbschemata, Kvantum-, GTK- und Icon-Themes sichern"),
-    ("📦", "Archivierung", "Backup-Archiv komprimieren & im Sync-Ordner ablegen"),
+    ("🖥️", QT_TRANSLATE_NOOP("Steps", "Plasma Desktop"), QT_TRANSLATE_NOOP("Steps", "Panels, Widgets & Desktop-Konfigurationen erfassen")),
+    ("🖼️", QT_TRANSLATE_NOOP("Steps", "Hintergrundbild"), QT_TRANSLATE_NOOP("Steps", "Aktive Desktop- & Sperrbildschirm-Hintergründe sammeln")),
+    ("🎨", QT_TRANSLATE_NOOP("Steps", "Themes & Design"), QT_TRANSLATE_NOOP("Steps", "Farbschemata, Kvantum-, GTK- und Icon-Themes sichern")),
+    ("📦", QT_TRANSLATE_NOOP("Steps", "Archivierung"), QT_TRANSLATE_NOOP("Steps", "Backup-Archiv komprimieren & im Sync-Ordner ablegen")),
 ]
 
 RESTORE_STEPS = [
-    ("🔍", "Vorbereitung", "Theme-Manifest & System-Abhängigkeiten prüfen"),
-    ("📦", "Dateien einspielen", "KDE-Konfigurationen, Widgets und Themes entpacken"),
-    ("🖼️", "Hintergrund & Schriften", "Hintergrundbild einrichten & Font-Cache aktualisieren"),
-    ("🖥️", "Plasma Desktop", "Plasma Desktop & KWin neu laden, Layouts anwenden"),
+    ("🔍", QT_TRANSLATE_NOOP("Steps", "Vorbereitung"), QT_TRANSLATE_NOOP("Steps", "Theme-Manifest & System-Abhängigkeiten prüfen")),
+    ("📦", QT_TRANSLATE_NOOP("Steps", "Dateien einspielen"), QT_TRANSLATE_NOOP("Steps", "KDE-Konfigurationen, Widgets und Themes entpacken")),
+    ("🖼️", QT_TRANSLATE_NOOP("Steps", "Hintergrund & Schriften"), QT_TRANSLATE_NOOP("Steps", "Hintergrundbild einrichten & Font-Cache aktualisieren")),
+    ("🖥️", QT_TRANSLATE_NOOP("Steps", "Plasma Desktop"), QT_TRANSLATE_NOOP("Steps", "Plasma Desktop & KWin neu laden, Layouts anwenden")),
 ]
 
 
@@ -176,14 +186,14 @@ def diff_states(old_path, new_path):
         # Da plasma-org.kde.plasma.desktop-appletsrc auch das Hintergrundbild speichert,
         # Widgets nur benennen, wenn nicht bereits das Hintergrundbild als Ursache erkannt wurde.
         if "das Hintergrundbild" not in named and "die Arbeitsflächen-Widgets" not in named:
-            named.append("die Arbeitsflächen-Widgets")
+            named.append(QT_TRANSLATE_NOOP("Changes", "die Arbeitsflächen-Widgets"))
 
     if "plasmashellrc" in changed_files and "die Plasma-Panels" not in named:
-        named.append("die Plasma-Panels")
+        named.append(QT_TRANSLATE_NOOP("Changes", "die Plasma-Panels"))
     if "plasmarc" in changed_files and "das Plasma-Design" not in named:
         named.append("das Plasma-Design")
     if "kscreenlockerrc" in changed_files and "das Bild des Sperrbildschirms" not in named:
-        named.append("den Sperrbildschirm")
+        named.append(QT_TRANSLATE_NOOP("Changes", "den Sperrbildschirm"))
 
     # 3. Theme- und Widget-Ordner (Ebene B)
     new_dir_keys = set(new_dirs)
@@ -195,13 +205,13 @@ def diff_states(old_path, new_path):
         has_wallpaper = any("wallpapers" in p for p in changed_dirs)
         has_theme = any("desktoptheme" in p for p in changed_dirs)
         if has_plasmoid and "die installierten Widgets" not in named:
-            named.append("die installierten Widgets")
+            named.append(QT_TRANSLATE_NOOP("Changes", "die installierten Widgets"))
         if has_wallpaper and "das Hintergrundbild" not in named:
-            named.append("die Hintergrundbilder")
+            named.append(QT_TRANSLATE_NOOP("Changes", "die Hintergrundbilder"))
         if has_theme and "das Plasma-Design" not in named:
-            named.append("die installierten Plasma-Designs")
+            named.append(QT_TRANSLATE_NOOP("Changes", "die installierten Plasma-Designs"))
         if not (has_plasmoid or has_wallpaper or has_theme) and "die installierten Designs" not in named:
-            named.append("die installierten Designs")
+            named.append(QT_TRANSLATE_NOOP("Changes", "die installierten Designs"))
 
     return list(dict.fromkeys(named)), details
 
@@ -210,12 +220,19 @@ def format_change_list(named, max_items=3):
     """Baut aus der Liste benannter Änderungen den Satzteil für 'Du hast … geändert'."""
     if not named:
         return None
-    if len(named) > max_items:
-        shown = named[:max_items]
-        return ", ".join(shown) + f" und {len(named) - max_items} weitere Einstellungen"
-    if len(named) == 1:
-        return named[0]
-    return ", ".join(named[:-1]) + " und " + named[-1]
+    # Erst an der Anzeigegrenze übersetzen: diff_states dedupliziert Quelltexte.
+    translated = [QCoreApplication.translate("Changes", name) for name in named]
+    separator = QCoreApplication.translate("Changes", ", ")
+    if len(translated) > max_items:
+        shown = separator.join(translated[:max_items])
+        return QCoreApplication.translate(
+            "Changes", "{changes} und %n weitere Einstellungen", None, len(translated) - max_items
+        ).format(changes=shown)
+    if len(translated) == 1:
+        return translated[0]
+    return QCoreApplication.translate("Changes", "{changes} und {last}").format(
+        changes=separator.join(translated[:-1]), last=translated[-1]
+    )
 
 
 def describe_changes(old_path, new_path, max_items=3):
@@ -258,8 +275,8 @@ AUTOSTART_TEMPLATE = (
     "Hidden=false\n"
     "NoDisplay=false\n"
     "X-GNOME-Autostart-enabled=true\n"
-    "Name=KDE Plasma Sync GUI\n"
-    "Comment=KDE Plasma Backup & Sync GUI Tool\n"
+    "Name={name}\n"
+    "Comment={comment}\n"
     "Icon=preferences-desktop-wallpaper\n"
     "Categories=System;Utility;\n"
     "StartupNotify=false\n"
@@ -277,7 +294,11 @@ def update_autostart_file(enabled):
             exec_cmd = "kde-sync-gui --minimized"
         else:
             exec_cmd = f"python3 {os.path.join(script_dir, 'main.py')} --minimized"
-        content = AUTOSTART_TEMPLATE.format(exec_cmd=exec_cmd)
+        content = AUTOSTART_TEMPLATE.format(
+            exec_cmd=exec_cmd,
+            name=QCoreApplication.translate("Autostart", "KDE Plasma Sync GUI"),
+            comment=QCoreApplication.translate("Autostart", "KDE Plasma Backup & Sync GUI Tool"),
+        )
 
         try:
             # Nur schreiben, wenn sich etwas ändert; die Datei darf nicht ausführbar sein
@@ -293,13 +314,13 @@ def update_autostart_file(enabled):
             if (os.stat(autostart_file).st_mode & 0o777) != 0o644:
                 os.chmod(autostart_file, 0o644)
         except Exception as e:
-            print(f"Error writing autostart file: {e}")
+            print(QCoreApplication.translate("Autostart", "Error writing autostart file: {error}").format(error=e))
     else:
         if os.path.exists(autostart_file):
             try:
                 os.remove(autostart_file)
             except Exception as e:
-                print(f"Error removing autostart file: {e}")
+                print(QCoreApplication.translate("Autostart", "Error removing autostart file: {error}").format(error=e))
 
 
 class ScriptRunner(QThread):
@@ -331,7 +352,7 @@ class ScriptRunner(QThread):
                 text=False
             )
         except Exception as e:
-            self.output_received.emit(f"Fehler beim Starten des Prozesses: {e}\n")
+            self.output_received.emit(self.tr("Fehler beim Starten des Prozesses: {error}\n").format(error=e))
             self.finished_status.emit(-1)
             return
 
@@ -434,7 +455,7 @@ class FingerprintRunner(QThread):
 class PasswordDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Administratorrechte erforderlich")
+        self.setWindowTitle(self.tr("Administratorrechte erforderlich"))
         self.setModal(True)
         self.setFixedWidth(380)
         
@@ -446,9 +467,9 @@ class PasswordDialog(QDialog):
         layout.addWidget(icon_label)
         
         text_label = QLabel(
-            "Das Backup-Skript erfordert Administratorrechte (sudo), "
+            self.tr("Das Backup-Skript erfordert Administratorrechte (sudo), "
             "um eventuell fehlende KDE-Abhängigkeiten oder Themes zu installieren.\n\n"
-            "Bitte gib das Passwort für 'sudo' ein:"
+            "Bitte gib das Passwort für 'sudo' ein:")
         )
         text_label.setWordWrap(True)
         layout.addWidget(text_label)
@@ -458,11 +479,11 @@ class PasswordDialog(QDialog):
         layout.addWidget(self.password_input)
         
         btn_layout = QHBoxLayout()
-        self.btn_ok = QPushButton("Bestätigen")
+        self.btn_ok = QPushButton(self.tr("Bestätigen"))
         self.btn_ok.setObjectName("primaryButton")
         self.btn_ok.clicked.connect(self.accept)
         
-        self.btn_cancel = QPushButton("Abbrechen")
+        self.btn_cancel = QPushButton(self.tr("Abbrechen"))
         self.btn_cancel.clicked.connect(self.reject)
         
         btn_layout.addWidget(self.btn_cancel)
@@ -490,16 +511,18 @@ class BackupItemWidget(QWidget):
         name_label = QLabel(filename)
         name_label.setStyleSheet("font-weight: bold; font-size: 13px;")
         
-        date_str = "Unbekanntes Datum"
+        date_str = self.tr("Unbekanntes Datum")
         try:
             match = re.search(r'(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})', filename)
             if match:
                 y, m, d, hh, mm, ss = match.groups()
-                date_str = f"{d}.{m}.{y} {hh}:{mm}:{ss}"
+                date_str = self.tr("{day}.{month}.{year} {hour}:{minute}:{second}").format(
+                    day=d, month=m, year=y, hour=hh, minute=mm, second=ss
+                )
         except Exception:
             pass
             
-        date_label = QLabel(f"Erstellt am: {date_str}")
+        date_label = QLabel(self.tr("Erstellt am: {date}").format(date=date_str))
         date_label.setStyleSheet("color: #a0a0b0; font-size: 11px;")
         
         info_layout.addWidget(name_label)
@@ -508,20 +531,20 @@ class BackupItemWidget(QWidget):
         
         layout.addStretch()
         
-        size_str = "0 B"
+        size_str = self.tr("0 B")
         if os.path.exists(self.filepath):
             size_str = format_size(os.path.getsize(self.filepath))
         size_label = QLabel(size_str)
         size_label.setStyleSheet("color: #a0a0b0; font-size: 12px; margin-right: 15px;")
         layout.addWidget(size_label)
         
-        btn_restore = QPushButton("Einspielen")
-        btn_restore.setToolTip("Dieses Backup wiederherstellen")
+        btn_restore = QPushButton(self.tr("Einspielen"))
+        btn_restore.setToolTip(self.tr("Dieses Backup wiederherstellen"))
         btn_restore.clicked.connect(lambda: self.restore_requested.emit(self.filename))
         
-        btn_delete = QPushButton("Löschen")
+        btn_delete = QPushButton(self.tr("Löschen"))
         btn_delete.setObjectName("dangerButton")
-        btn_delete.setToolTip("Backup löschen")
+        btn_delete.setToolTip(self.tr("Backup löschen"))
         btn_delete.clicked.connect(lambda: self.delete_requested.emit(self.filename))
         
         layout.addWidget(btn_restore)
@@ -536,7 +559,7 @@ class KdeSyncGUI(QMainWindow):
         self.check_timer = QTimer(self)
         self.is_operation_running = False
 
-        self.setWindowTitle("KDE Plasma Backup & Sync")
+        self.setWindowTitle(self.tr("KDE Plasma Backup & Sync"))
         self.setMinimumSize(750, 500)
         self.setWindowIcon(QIcon.fromTheme("preferences-desktop-wallpaper"))
 
@@ -558,7 +581,7 @@ class KdeSyncGUI(QMainWindow):
         self.init_settings_tab()
 
         # Grafische Fortschrittskarte (wird während Backup / Restore eingeblendet)
-        self.operation_card = QGroupBox("Laufende Aktion")
+        self.operation_card = QGroupBox(self.tr("Laufende Aktion"))
         self.operation_card.setObjectName("operationCard")
         self.operation_card_layout = QVBoxLayout(self.operation_card)
         self.operation_card_layout.setContentsMargins(15, 12, 15, 12)
@@ -566,27 +589,27 @@ class KdeSyncGUI(QMainWindow):
 
         # Kopfzeile: Titel, Schritt-Badge, Toggle-Button, Schließen-Button
         op_header_layout = QHBoxLayout()
-        self.lbl_op_title = QLabel("Aktion läuft...")
+        self.lbl_op_title = QLabel(self.tr("Aktion läuft..."))
         self.lbl_op_title.setObjectName("operationTitle")
         
-        self.lbl_op_step_badge = QLabel("Schritt 1 von 4")
+        self.lbl_op_step_badge = QLabel(self.tr("Schritt {step} von {total}").format(step=1, total=4))
         self.lbl_op_step_badge.setObjectName("operationStepBadge")
         
-        self.btn_toggle_protocol = QPushButton("▼ Protokoll anzeigen")
+        self.btn_toggle_protocol = QPushButton(self.tr("▼ Protokoll anzeigen"))
         self.btn_toggle_protocol.setObjectName("btnToggleProtocol")
         self.btn_toggle_protocol.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_toggle_protocol.clicked.connect(self.toggle_console)
 
-        self.btn_cancel_op = QPushButton("Abbrechen")
+        self.btn_cancel_op = QPushButton(self.tr("Abbrechen"))
         self.btn_cancel_op.setObjectName("btnCancelOp")
-        self.btn_cancel_op.setToolTip("Laufende Aktion abbrechen")
+        self.btn_cancel_op.setToolTip(self.tr("Laufende Aktion abbrechen"))
         self.btn_cancel_op.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_cancel_op.setVisible(False)
         self.btn_cancel_op.clicked.connect(self.cancel_operation)
 
-        self.btn_close_card = QPushButton("✕")
+        self.btn_close_card = QPushButton(self.tr("✕"))
         self.btn_close_card.setObjectName("btnCloseCard")
-        self.btn_close_card.setToolTip("Aktionsanzeige schließen")
+        self.btn_close_card.setToolTip(self.tr("Aktionsanzeige schließen"))
         self.btn_close_card.setFixedSize(24, 24)
         self.btn_close_card.setVisible(False)
         self.btn_close_card.clicked.connect(lambda: self.operation_card.setVisible(False))
@@ -603,14 +626,14 @@ class KdeSyncGUI(QMainWindow):
         activity_layout = QHBoxLayout()
         activity_layout.setSpacing(12)
         
-        self.lbl_phase_icon = QLabel("🖥️")
+        self.lbl_phase_icon = QLabel(self.tr("🖥️"))
         self.lbl_phase_icon.setObjectName("phaseIcon")
         
         phase_text_layout = QVBoxLayout()
         phase_text_layout.setSpacing(2)
-        self.lbl_phase_title = QLabel("Plasma Desktop")
+        self.lbl_phase_title = QLabel(self.tr("Plasma Desktop"))
         self.lbl_phase_title.setObjectName("phaseTitle")
-        self.lbl_phase_detail = QLabel("Sammle KDE-Konfigurationen, Widgets und Panels...")
+        self.lbl_phase_detail = QLabel(self.tr("Sammle KDE-Konfigurationen, Widgets und Panels..."))
         self.lbl_phase_detail.setObjectName("phaseDetail")
         self.lbl_phase_detail.setWordWrap(True)
         phase_text_layout.addWidget(self.lbl_phase_title)
@@ -625,13 +648,13 @@ class KdeSyncGUI(QMainWindow):
         self.steps_pills_layout.setSpacing(6)
         self.step_pills = []
         for i in range(4):
-            pill = QLabel(f"Schritt {i+1}")
+            pill = QLabel(self.tr("Schritt {step}").format(step=i + 1))
             pill.setObjectName(f"stepPill_{i}")
             pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.step_pills.append(pill)
             self.steps_pills_layout.addWidget(pill)
             if i < 3:
-                arrow = QLabel("›")
+                arrow = QLabel(self.tr("›"))
                 arrow.setStyleSheet("color: #606070; font-size: 14px; font-weight: bold;")
                 self.steps_pills_layout.addWidget(arrow)
         self.operation_card_layout.addLayout(self.steps_pills_layout)
@@ -659,10 +682,10 @@ class KdeSyncGUI(QMainWindow):
         self.console_layout.addWidget(self.inline_log_output)
         
         log_btn_layout = QHBoxLayout()
-        self.btn_copy_log = QPushButton("Protokoll kopieren")
+        self.btn_copy_log = QPushButton(self.tr("Protokoll kopieren"))
         self.btn_copy_log.setObjectName("btnCopyLog")
         self.btn_copy_log.clicked.connect(self.copy_log_to_clipboard)
-        self.btn_clear_log = QPushButton("Protokoll leeren")
+        self.btn_clear_log = QPushButton(self.tr("Protokoll leeren"))
         self.btn_clear_log.setObjectName("btnClearLog")
         self.btn_clear_log.clicked.connect(self.inline_log_output.clear)
         log_btn_layout.addStretch()
@@ -682,7 +705,7 @@ class KdeSyncGUI(QMainWindow):
 
         # Status Bar (für Ruhezustand / einfache Meldungen)
         self.progress_layout = QHBoxLayout()
-        self.status_bar_label = QLabel("Bereit")
+        self.status_bar_label = QLabel(self.tr("Bereit"))
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_bar.setRange(0, 0)
@@ -777,12 +800,12 @@ class KdeSyncGUI(QMainWindow):
         is_visible = self.console_widget.isVisible()
         self.console_widget.setVisible(not is_visible)
         if not is_visible:
-            self.btn_toggle_protocol.setText("▲ Protokoll ausblenden")
+            self.btn_toggle_protocol.setText(self.tr("▲ Protokoll ausblenden"))
             if self.height() < 640:
                 self.resize(self.width(), 640)
             self.inline_log_output.ensureCursorVisible()
         else:
-            self.btn_toggle_protocol.setText("▼ Protokoll anzeigen")
+            self.btn_toggle_protocol.setText(self.tr("▼ Protokoll anzeigen"))
 
     def set_pill_state(self, index, state):
         if index < 0 or index >= len(self.step_pills):
@@ -798,43 +821,48 @@ class KdeSyncGUI(QMainWindow):
             pill.setStyleSheet("background-color: #1b1b22; color: #707080; border: 1px solid #2a2a35; border-radius: 4px; padding: 4px 8px;")
 
     def init_operation_ui(self, title, step_defs):
+        step_defs = [
+            (icon, QCoreApplication.translate("Steps", name), QCoreApplication.translate("Steps", detail))
+            for icon, name, detail in step_defs
+        ]
         self.current_step_defs = step_defs
         self.lbl_op_title.setText(title)
-        self.lbl_op_step_badge.setText(f"Schritt 1 von {len(step_defs)}")
+        self.lbl_op_step_badge.setText(self.tr("Schritt {step} von {total}").format(step=1, total=len(step_defs)))
         self.lbl_phase_icon.setText(step_defs[0][0])
         self.lbl_phase_title.setText(step_defs[0][1])
         self.lbl_phase_detail.setText(step_defs[0][2])
         self.op_progress_bar.setValue(10)
         self.btn_close_card.setVisible(False)
-        self.btn_toggle_protocol.setText("▼ Protokoll anzeigen")
+        self.btn_toggle_protocol.setText(self.tr("▼ Protokoll anzeigen"))
         self.console_widget.setVisible(False)
 
         for i, (icon, name, _) in enumerate(step_defs):
             if i < len(self.step_pills):
-                self.step_pills[i].setText(f"{icon} {name}")
+                self.step_pills[i].setText(self.tr("{icon} {name}").format(icon=icon, name=name))
                 if i == 0:
                     self.set_pill_state(i, "active")
                 else:
                     self.set_pill_state(i, "pending")
         self.operation_card.setVisible(True)
 
-    def on_progress_step(self, step, total, phase, detail):
-        self.lbl_op_step_badge.setText(f"Schritt {step} von {total}")
+    def on_progress_step(self, step, total, phase, detail, icon=None):
+        self.lbl_op_step_badge.setText(self.tr("Schritt {step} von {total}").format(step=step, total=total))
         self.lbl_phase_title.setText(phase)
         self.lbl_phase_detail.setText(detail)
 
-        # Icon mapping basierend auf Phasen-Namen
-        icon = "⚙️"
-        if "Plasma" in phase or "Desktop" in phase:
-            icon = "🖥️"
-        elif "Hintergrund" in phase or "Wallpaper" in phase:
-            icon = "🖼️"
-        elif "Theme" in phase or "Design" in phase:
-            icon = "🎨"
-        elif "Archiv" in phase or "Datei" in phase or "entpack" in phase:
-            icon = "📦"
-        elif "Vorbereit" in phase or "Prüf" in phase:
-            icon = "🔍"
+        # Nur alte Freitext-Ereignisse benötigen die sprachabhängige Zuordnung.
+        if icon is None:
+            icon = "⚙️"
+            if "Plasma" in phase or "Desktop" in phase:
+                icon = "🖥️"
+            elif "Hintergrund" in phase or "Wallpaper" in phase:
+                icon = "🖼️"
+            elif "Theme" in phase or "Design" in phase:
+                icon = "🎨"
+            elif "Archiv" in phase or "Datei" in phase or "entpack" in phase:
+                icon = "📦"
+            elif "Vorbereit" in phase or "Prüf" in phase:
+                icon = "🔍"
         self.lbl_phase_icon.setText(icon)
 
         pct = int((step / max(total, 1)) * 95)
@@ -844,7 +872,7 @@ class KdeSyncGUI(QMainWindow):
             if i < step - 1:
                 text = self.step_pills[i].text()
                 if not text.startswith("✓ "):
-                    self.step_pills[i].setText(f"✓ {text}")
+                    self.step_pills[i].setText(self.tr("✓ {text}").format(text=text))
                 self.set_pill_state(i, "done")
             elif i == step - 1:
                 self.set_pill_state(i, "active")
@@ -852,21 +880,21 @@ class KdeSyncGUI(QMainWindow):
                 self.set_pill_state(i, "pending")
 
     def on_progress_done(self, title, detail):
-        self.lbl_phase_icon.setText("✅")
+        self.lbl_phase_icon.setText(self.tr("✅"))
         self.lbl_phase_title.setText(title)
         self.lbl_phase_detail.setText(detail)
-        self.lbl_op_step_badge.setText("Fertig")
+        self.lbl_op_step_badge.setText(self.tr("Fertig"))
         self.op_progress_bar.setValue(100)
         for i in range(len(self.step_pills)):
             text = self.step_pills[i].text()
             if not text.startswith("✓ "):
-                self.step_pills[i].setText(f"✓ {text}")
+                self.step_pills[i].setText(self.tr("✓ {text}").format(text=text))
             self.set_pill_state(i, "done")
         self.btn_close_card.setVisible(True)
 
     def verify_script_exists(self):
         if not os.path.exists(SCRIPT_PATH):
-            self.status_bar_label.setText(f"Skript nicht gefunden unter: {SCRIPT_PATH}")
+            self.status_bar_label.setText(self.tr("Skript nicht gefunden unter: {path}").format(path=SCRIPT_PATH))
             self.status_bar_label.setStyleSheet("color: #da4453; font-weight: bold;")
             self.btn_backup.setEnabled(False)
             self.btn_restore_latest.setEnabled(False)
@@ -878,16 +906,16 @@ class KdeSyncGUI(QMainWindow):
         self.tray_icon.setIcon(QIcon.fromTheme("preferences-desktop-wallpaper"))
         
         tray_menu = QMenu()
-        show_action = QAction("GUI Öffnen", self)
+        show_action = QAction(self.tr("GUI Öffnen"), self)
         show_action.triggered.connect(self.show_normal)
         
-        check_action = QAction("Jetzt auf Updates prüfen", self)
+        check_action = QAction(self.tr("Jetzt auf Updates prüfen"), self)
         check_action.triggered.connect(lambda: self.background_update_check(manual=True))
         
-        backup_action = QAction("Jetzt sichern", self)
+        backup_action = QAction(self.tr("Jetzt sichern"), self)
         backup_action.triggered.connect(self.start_backup)
         
-        exit_action = QAction("Beenden", self)
+        exit_action = QAction(self.tr("Beenden"), self)
         exit_action.triggered.connect(QApplication.instance().quit)
         
         tray_menu.addAction(show_action)
@@ -914,8 +942,8 @@ class KdeSyncGUI(QMainWindow):
         if self.tray_icon.isVisible():
             self.hide()
             self.tray_icon.showMessage(
-                "KDE Plasma Sync",
-                "Das Tool läuft im Hintergrund im System-Tray weiter.",
+                self.tr("KDE Plasma Sync"),
+                self.tr("Das Tool läuft im Hintergrund im System-Tray weiter."),
                 QSystemTrayIcon.MessageIcon.Information,
                 2000
             )
@@ -924,7 +952,7 @@ class KdeSyncGUI(QMainWindow):
             event.accept()
 
     def on_tab_changed(self, index):
-        if self.tabs.tabText(index) == "Backups" and not self.is_operation_running:
+        if self.tabs.widget(index) is self.history_tab and not self.is_operation_running:
             self.refresh_backup_list()
 
     def update_timer_interval(self):
@@ -1134,7 +1162,7 @@ class KdeSyncGUI(QMainWindow):
             return
 
         frage = (
-            f"Du hast {what} geändert.\n\nSoll jetzt ein neuer Snapshot angelegt werden?"
+            self.tr("Du hast {changes} geändert.\n\nSoll jetzt ein neuer Snapshot angelegt werden?").format(changes=what)
         )
         # Zeitstempel der Nachfrage sofort vermerken, um wiederholte Prompts zu blockieren
         self.config["last_prompt_time"] = datetime.now().isoformat()
@@ -1142,11 +1170,11 @@ class KdeSyncGUI(QMainWindow):
         write_change_log("asked", what, details, last_fp, new_fp)
 
         box = QMessageBox()
-        box.setWindowTitle("Änderung erkannt")
+        box.setWindowTitle(self.tr("Änderung erkannt"))
         box.setIcon(QMessageBox.Icon.Question)
         box.setText(frage)
-        yes_btn = box.addButton("Snapshot anlegen", QMessageBox.ButtonRole.AcceptRole)
-        box.addButton("Ignorieren", QMessageBox.ButtonRole.RejectRole)
+        yes_btn = box.addButton(self.tr("Snapshot anlegen"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(self.tr("Ignorieren"), QMessageBox.ButtonRole.RejectRole)
         box.setWindowModality(Qt.WindowModality.NonModal)
         box.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.snapshot_dialog = box
@@ -1159,7 +1187,7 @@ class KdeSyncGUI(QMainWindow):
 
         if self.tray_icon.isVisible():
             self.tray_icon.showMessage(
-                "KDE Plasma Sync", f"Du hast {what} geändert. Snapshot anlegen?",
+                self.tr("KDE Plasma Sync"), self.tr("Du hast {changes} geändert. Snapshot anlegen?").format(changes=what),
                 QSystemTrayIcon.MessageIcon.Information, 6000
             )
 
@@ -1188,7 +1216,7 @@ class KdeSyncGUI(QMainWindow):
         self.config["last_prompt_time"] = datetime.now().isoformat()
         config_manager.save_config(self.config)
         self.promote_state_file()
-        self.status_bar_label.setText("Änderung erkannt — kein Snapshot angelegt.")
+        self.status_bar_label.setText(self.tr("Änderung erkannt — kein Snapshot angelegt."))
 
     def update_fingerprint_baseline_silently(self):
         # Läuft noch eine Aufnahme, nicht dieselbe Zwischendatei und denselben
@@ -1221,9 +1249,9 @@ class KdeSyncGUI(QMainWindow):
 
         # Header Info
         header_layout = QHBoxLayout()
-        header_label = QLabel("KDE Plasma Synchronisation")
+        header_label = QLabel(self.tr("KDE Plasma Synchronisation"))
         header_label.setObjectName("headerLabel")
-        sub_label = QLabel("Backup & Restore deiner Plasma 6 Einstellungen")
+        sub_label = QLabel(self.tr("Backup & Restore deiner Plasma 6 Einstellungen"))
         sub_label.setObjectName("subHeaderLabel")
         
         info_vbox = QVBoxLayout()
@@ -1238,24 +1266,24 @@ class KdeSyncGUI(QMainWindow):
         layout.addLayout(header_layout)
 
         # Status Card (Groupbox)
-        status_group = QGroupBox("Status Übersicht")
+        status_group = QGroupBox(self.tr("Status Übersicht"))
         status_layout = QVBoxLayout(status_group)
         status_layout.setSpacing(8)
 
-        self.lbl_status_desc = QLabel("Sync-Ordner:")
-        self.lbl_status_val = QLabel("Bereit")
+        self.lbl_status_desc = QLabel(self.tr("Sync-Ordner:"))
+        self.lbl_status_val = QLabel(self.tr("Bereit"))
         self.lbl_status_val.setObjectName("statusValueLabel")
 
-        self.lbl_last_backup = QLabel("Letztes angewendetes Backup:")
-        self.lbl_last_backup_val = QLabel("Unbekannt")
+        self.lbl_last_backup = QLabel(self.tr("Letztes angewendetes Backup:"))
+        self.lbl_last_backup_val = QLabel(self.tr("Unbekannt"))
         self.lbl_last_backup_val.setStyleSheet("font-weight: bold;")
         
-        self.lbl_newest_backup = QLabel("Neuestes Backup im Sync-Ordner:")
-        self.lbl_newest_backup_val = QLabel("Suche...")
+        self.lbl_newest_backup = QLabel(self.tr("Neuestes Backup im Sync-Ordner:"))
+        self.lbl_newest_backup_val = QLabel(self.tr("Suche..."))
         self.lbl_newest_backup_val.setStyleSheet("font-weight: bold;")
 
-        self.lbl_last_auto_desc = QLabel("Letzter automatischer Snapshot:")
-        self.lbl_last_auto_val = QLabel("Nie")
+        self.lbl_last_auto_desc = QLabel(self.tr("Letzter automatischer Snapshot:"))
+        self.lbl_last_auto_val = QLabel(self.tr("Nie"))
         self.lbl_last_auto_val.setStyleSheet("font-weight: bold;")
 
         status_layout.addWidget(self.lbl_status_desc)
@@ -1269,20 +1297,20 @@ class KdeSyncGUI(QMainWindow):
         layout.addWidget(status_group)
 
         # Actions Card
-        actions_group = QGroupBox("Schnellaktionen")
+        actions_group = QGroupBox(self.tr("Schnellaktionen"))
         actions_layout = QHBoxLayout(actions_group)
         
-        self.btn_backup = QPushButton("Jetzt sichern")
+        self.btn_backup = QPushButton(self.tr("Jetzt sichern"))
         self.btn_backup.setObjectName("primaryButton")
-        self.btn_backup.setToolTip("Erstellt ein aktuelles Backup und legt es im Sync-Ordner ab — dein Cloud-Client lädt es automatisch hoch")
+        self.btn_backup.setToolTip(self.tr("Erstellt ein aktuelles Backup und legt es im Sync-Ordner ab — dein Cloud-Client lädt es automatisch hoch"))
         self.btn_backup.clicked.connect(self.start_backup)
         
-        self.btn_restore_latest = QPushButton("Neuestes Backup einspielen")
-        self.btn_restore_latest.setToolTip("Spielt das aktuellste Backup aus dem Sync-Ordner ein")
+        self.btn_restore_latest = QPushButton(self.tr("Neuestes Backup einspielen"))
+        self.btn_restore_latest.setToolTip(self.tr("Spielt das aktuellste Backup aus dem Sync-Ordner ein"))
         self.btn_restore_latest.clicked.connect(self.restore_latest_backup)
         
-        self.btn_check_now = QPushButton("Auf Updates prüfen")
-        self.btn_check_now.setToolTip("Sucht nach neueren Backups im Sync-Ordner")
+        self.btn_check_now = QPushButton(self.tr("Auf Updates prüfen"))
+        self.btn_check_now.setToolTip(self.tr("Sucht nach neueren Backups im Sync-Ordner"))
         self.btn_check_now.clicked.connect(lambda: self.background_update_check(manual=True))
 
         actions_layout.addWidget(self.btn_backup)
@@ -1291,19 +1319,20 @@ class KdeSyncGUI(QMainWindow):
         layout.addWidget(actions_group)
         
         layout.addStretch()
-        self.tabs.addTab(tab, "Dashboard")
+        self.tabs.addTab(tab, self.tr("Dashboard"))
         
         self.update_dashboard_ui()
 
     def init_history_tab(self):
         tab = QWidget()
+        self.history_tab = tab
         tab.setObjectName("historyTab")
         tab.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         layout = QVBoxLayout(tab)
         
-        header = QLabel("Verfügbare Backups")
+        header = QLabel(self.tr("Verfügbare Backups"))
         header.setObjectName("headerLabel")
-        sub = QLabel("Liste aller Backup-Archive im Sync-Ordner")
+        sub = QLabel(self.tr("Liste aller Backup-Archive im Sync-Ordner"))
         sub.setObjectName("subHeaderLabel")
         layout.addWidget(header)
         layout.addWidget(sub)
@@ -1312,13 +1341,13 @@ class KdeSyncGUI(QMainWindow):
         layout.addWidget(self.list_backups)
 
         btn_layout = QHBoxLayout()
-        self.btn_refresh_history = QPushButton("Liste aktualisieren")
+        self.btn_refresh_history = QPushButton(self.tr("Liste aktualisieren"))
         self.btn_refresh_history.clicked.connect(self.refresh_backup_list)
         btn_layout.addWidget(self.btn_refresh_history)
         btn_layout.addStretch()
         
         layout.addLayout(btn_layout)
-        self.tabs.addTab(tab, "Backups")
+        self.tabs.addTab(tab, self.tr("Backups"))
 
 
     def init_settings_tab(self):
@@ -1327,90 +1356,108 @@ class KdeSyncGUI(QMainWindow):
         tab.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         layout = QVBoxLayout(tab)
         
-        header = QLabel("Einstellungen")
+        header = QLabel(self.tr("Einstellungen"))
         header.setObjectName("headerLabel")
-        sub = QLabel("Pfade und Synchronisations-Optionen konfigurieren")
+        sub = QLabel(self.tr("Darstellung, Pfade und Synchronisation konfigurieren"))
         sub.setObjectName("subHeaderLabel")
         layout.addWidget(header)
         layout.addWidget(sub)
 
-        form_group = QGroupBox("Synchronisation")
+        appearance_group = QGroupBox(self.tr("Darstellung"))
+        appearance_layout = QFormLayout(appearance_group)
+
+        self.combo_language = QComboBox()
+        self.combo_language.addItem(self.tr("Systemsprache"), "system")
+        self.combo_language.addItem(self.tr("Deutsch"), "de")
+        self.combo_language.addItem(self.tr("Englisch"), "en")
+        language_index = self.combo_language.findData(self.config.get("language", "system"))
+        self.combo_language.setCurrentIndex(max(0, language_index))
+        appearance_layout.addRow(self.tr("Sprache:"), self.combo_language)
+        language_hint = QLabel(self.tr("Die Sprache wird nach einem Neustart der Anwendung geändert."))
+        language_hint.setWordWrap(True)
+        appearance_layout.addRow("", language_hint)
+        layout.addWidget(appearance_group)
+
+        form_group = QGroupBox(self.tr("Synchronisation"))
         form_layout = QFormLayout(form_group)
-        
+
         # Path Field
         self.txt_backup_dir = QLineEdit()
         self.txt_backup_dir.setText(self.config.get("backup_dir", ""))
-        btn_browse = QPushButton("Durchsuchen...")
+        btn_browse = QPushButton(self.tr("Durchsuchen..."))
         btn_browse.clicked.connect(self.browse_backup_dir)
         
         path_layout = QHBoxLayout()
         path_layout.addWidget(self.txt_backup_dir)
         path_layout.addWidget(btn_browse)
-        form_layout.addRow("Backup-Ordner:", path_layout)
+        form_layout.addRow(self.tr("Backup-Ordner:"), path_layout)
 
         hint = QLabel(
-            "Egal welcher Cloud-Dienst: Wähle einfach einen Ordner, den dein "
+            self.tr("Egal welcher Cloud-Dienst: Wähle einfach einen Ordner, den dein "
             "Sync-Client (Nextcloud, Google Drive, OneDrive, Dropbox, Syncthing, rsync, …) "
             "automatisch synchronisiert. Dieses Programm beobachtet nur den lokalen Ordner — "
-            "den Up-/Download übernimmt dein Client."
+            "den Up-/Download übernimmt dein Client.")
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #a0a0b0; font-size: 11px;")
         form_layout.addRow("", hint)
 
         # Autostart Checkbox
-        self.chk_autostart = QCheckBox("Mit System starten")
-        self.chk_autostart.setToolTip("Startet diese GUI automatisch im Hintergrund beim Login.")
+        self.chk_autostart = QCheckBox(self.tr("Mit System starten"))
+        self.chk_autostart.setToolTip(self.tr("Startet diese GUI automatisch im Hintergrund beim Login."))
         self.chk_autostart.setChecked(self.config.get("autostart_enabled", True))
         form_layout.addRow("", self.chk_autostart)
 
         # Periodic check timer
-        self.chk_periodic = QCheckBox("Zusätzlich regelmäßig im Hintergrund prüfen")
+        self.chk_periodic = QCheckBox(self.tr("Zusätzlich regelmäßig im Hintergrund prüfen"))
         self.chk_periodic.setToolTip(
-            "Neue Backups werden ohnehin sofort erkannt, sobald sie im Ordner auftauchen. "
-            "Diese Prüfung ist ein zusätzliches Sicherheitsnetz."
+            self.tr("Neue Backups werden ohnehin sofort erkannt, sobald sie im Ordner auftauchen. "
+            "Diese Prüfung ist ein zusätzliches Sicherheitsnetz.")
         )
         self.chk_periodic.setChecked(self.config.get("periodic_check_enabled", True))
         form_layout.addRow("", self.chk_periodic)
 
         self.spin_interval = QSpinBox()
         self.spin_interval.setRange(1, 24)
-        self.spin_interval.setSuffix(" Stunden")
         self.spin_interval.setValue(max(1, int(self.config.get("check_interval_hours", 2))))
-        form_layout.addRow("Prüfintervall:", self.spin_interval)
+        self.spin_interval.setSuffix(self.tr(" Stunden", None, self.spin_interval.value()))
+        self.spin_interval.valueChanged.connect(
+            lambda value: self.spin_interval.setSuffix(self.tr(" Stunden", None, value))
+        )
+        form_layout.addRow(self.tr("Prüfintervall:"), self.spin_interval)
 
         layout.addWidget(form_group)
 
         # Gruppe: Automatische Snapshots
-        auto_group = QGroupBox("Automatische Snapshots")
+        auto_group = QGroupBox(self.tr("Automatische Snapshots"))
         auto_layout = QFormLayout(auto_group)
 
-        self.chk_auto_snapshot = QCheckBox("Automatische Snapshots bei erkannter Änderung")
-        self.chk_auto_snapshot.setToolTip("Erstellt automatisch einen Snapshot, wenn sich Einstellungen oder Designs ändern.")
+        self.chk_auto_snapshot = QCheckBox(self.tr("Automatische Snapshots bei erkannter Änderung"))
+        self.chk_auto_snapshot.setToolTip(self.tr("Erstellt automatisch einen Snapshot, wenn sich Einstellungen oder Designs ändern."))
         self.chk_auto_snapshot.setChecked(self.config.get("auto_snapshot_enabled", False))
         auto_layout.addRow("", self.chk_auto_snapshot)
 
-        self.chk_ask_first = QCheckBox("Vorher fragen („Du hast … geändert, Snapshot anlegen?“)")
+        self.chk_ask_first = QCheckBox(self.tr("Vorher fragen („Du hast … geändert, Snapshot anlegen?“)"))
         self.chk_ask_first.setToolTip(
-            "Fragt nach und benennt dabei, was sich geändert hat. "
-            "Ohne Haken wird der Snapshot still im Hintergrund angelegt."
+            self.tr("Fragt nach und benennt dabei, was sich geändert hat. "
+            "Ohne Haken wird der Snapshot still im Hintergrund angelegt.")
         )
         self.chk_ask_first.setChecked(self.config.get("auto_snapshot_ask_first", True))
         auto_layout.addRow("", self.chk_ask_first)
 
-        self.chk_ignore_dock = QCheckBox("Dock-Anordnung ignorieren (Starter, Gruppen, Ordner)")
+        self.chk_ignore_dock = QCheckBox(self.tr("Dock-Anordnung ignorieren (Starter, Gruppen, Ordner)"))
         self.chk_ignore_dock.setToolTip(
-            "Änderungen an den angehefteten Starter-Listen, Gruppen und Ordnern des Docks lösen "
-            "keine Nachfrage aus. Sie werden weiterhin mit jedem Snapshot gesichert."
+            self.tr("Änderungen an den angehefteten Starter-Listen, Gruppen und Ordnern des Docks lösen "
+            "keine Nachfrage aus. Sie werden weiterhin mit jedem Snapshot gesichert.")
         )
         self.chk_ignore_dock.setChecked(self.config.get("auto_snapshot_ignore_dock", False))
         auto_layout.addRow("", self.chk_ignore_dock)
 
         auto_hint = QLabel(
-            "Erkennt Änderungen an KDE-Konfigurationen, Themes, Farbschemata und Wallpapers "
+            self.tr("Erkennt Änderungen an KDE-Konfigurationen, Themes, Farbschemata und Wallpapers "
             "und legt nach einer Ruhephase einen Snapshot an.\n"
             "Hinweis: Ein vollständiger Snapshot ist mehrere hundert MB groß (enthält Themes & Configs) "
-            "und wird von deinem konfigurierten Cloud-Client synchronisiert."
+            "und wird von deinem konfigurierten Cloud-Client synchronisiert.")
         )
         auto_hint.setWordWrap(True)
         auto_hint.setStyleSheet("color: #a0a0b0; font-size: 11px;")
@@ -1418,28 +1465,37 @@ class KdeSyncGUI(QMainWindow):
 
         self.spin_quiet_seconds = QSpinBox()
         self.spin_quiet_seconds.setRange(10, 600)
-        self.spin_quiet_seconds.setSuffix(" Sekunden")
         self.spin_quiet_seconds.setValue(int(self.config.get("auto_snapshot_quiet_seconds", 90)))
-        self.spin_quiet_seconds.setToolTip("Ruhephase nach der letzten Dateiänderung, bevor der Fingerabdruck berechnet wird.")
-        auto_layout.addRow("Ruhephase:", self.spin_quiet_seconds)
+        self.spin_quiet_seconds.setSuffix(self.tr(" Sekunden", None, self.spin_quiet_seconds.value()))
+        self.spin_quiet_seconds.valueChanged.connect(
+            lambda value: self.spin_quiet_seconds.setSuffix(self.tr(" Sekunden", None, value))
+        )
+        self.spin_quiet_seconds.setToolTip(self.tr("Ruhephase nach der letzten Dateiänderung, bevor der Fingerabdruck berechnet wird."))
+        auto_layout.addRow(self.tr("Ruhephase:"), self.spin_quiet_seconds)
 
         self.spin_min_interval = QSpinBox()
         self.spin_min_interval.setRange(5, 1440)
-        self.spin_min_interval.setSuffix(" Minuten")
         self.spin_min_interval.setValue(int(self.config.get("auto_snapshot_min_interval_minutes", 30)))
-        self.spin_min_interval.setToolTip("Mindestabstand zwischen zwei automatischen Snapshots, um Bandbreite und Speicher zu schonen.")
-        auto_layout.addRow("Mindestabstand:", self.spin_min_interval)
+        self.spin_min_interval.setSuffix(self.tr(" Minuten", None, self.spin_min_interval.value()))
+        self.spin_min_interval.valueChanged.connect(
+            lambda value: self.spin_min_interval.setSuffix(self.tr(" Minuten", None, value))
+        )
+        self.spin_min_interval.setToolTip(self.tr("Mindestabstand zwischen zwei automatischen Snapshots, um Bandbreite und Speicher zu schonen."))
+        auto_layout.addRow(self.tr("Mindestabstand:"), self.spin_min_interval)
 
         self.spin_keep_snapshots = QSpinBox()
         self.spin_keep_snapshots.setRange(0, 100)
-        self.spin_keep_snapshots.setSuffix(" Snapshots")
-        self.spin_keep_snapshots.setSpecialValueText("Unbegrenzt (0)")
+        self.spin_keep_snapshots.setSpecialValueText(self.tr("Unbegrenzt (0)"))
         self.spin_keep_snapshots.setValue(int(self.config.get("keep_snapshots", 3)))
-        self.spin_keep_snapshots.setToolTip("Anzahl der neuesten Snapshots, die im Sync-Ordner behalten werden (ältere werden rotiert).")
-        auto_layout.addRow("Behalte Snapshots:", self.spin_keep_snapshots)
+        self.spin_keep_snapshots.setSuffix(self.tr(" Snapshots", None, self.spin_keep_snapshots.value()))
+        self.spin_keep_snapshots.valueChanged.connect(
+            lambda value: self.spin_keep_snapshots.setSuffix(self.tr(" Snapshots", None, value))
+        )
+        self.spin_keep_snapshots.setToolTip(self.tr("Anzahl der neuesten Snapshots, die im Sync-Ordner behalten werden (ältere werden rotiert)."))
+        auto_layout.addRow(self.tr("Behalte Snapshots:"), self.spin_keep_snapshots)
 
-        self.chk_auto_restore = QCheckBox("Neue Snapshots automatisch ohne Nachfrage einspielen")
-        self.chk_auto_restore.setToolTip("Spielt neu im Sync-Ordner eintreffende Snapshots von anderen Rechnern sofort automatisch ein. Ist dies deaktiviert, erscheint die Nachfrage: 'Neuer Snapshot gefunden, einspielen?'")
+        self.chk_auto_restore = QCheckBox(self.tr("Neue Snapshots automatisch ohne Nachfrage einspielen"))
+        self.chk_auto_restore.setToolTip(self.tr("Spielt neu im Sync-Ordner eintreffende Snapshots von anderen Rechnern sofort automatisch ein. Ist dies deaktiviert, erscheint die Nachfrage: 'Neuer Snapshot gefunden, einspielen?'"))
         self.chk_auto_restore.setChecked(self.config.get("auto_restore_enabled", False))
         auto_layout.addRow("", self.chk_auto_restore)
 
@@ -1447,7 +1503,7 @@ class KdeSyncGUI(QMainWindow):
 
         # Buttons
         btn_layout = QHBoxLayout()
-        self.btn_save_settings = QPushButton("Speichern")
+        self.btn_save_settings = QPushButton(self.tr("Speichern"))
         self.btn_save_settings.setObjectName("primaryButton")
         self.btn_save_settings.clicked.connect(self.save_settings)
         btn_layout.addWidget(self.btn_save_settings)
@@ -1455,7 +1511,7 @@ class KdeSyncGUI(QMainWindow):
         layout.addLayout(btn_layout)
         
         layout.addStretch()
-        self.tabs.addTab(tab, "Einstellungen")
+        self.tabs.addTab(tab, self.tr("Einstellungen"))
 
     # ----------------- ACTIONS & SLOTS -----------------
 
@@ -1465,7 +1521,7 @@ class KdeSyncGUI(QMainWindow):
         if last_applied:
             self.lbl_last_backup_val.setText(last_applied)
         else:
-            self.lbl_last_backup_val.setText("Keines (Noch nie synchronisiert)")
+            self.lbl_last_backup_val.setText(self.tr("Keines (Noch nie synchronisiert)"))
 
         # Update last auto snapshot
         last_auto = self.config.get("last_auto_snapshot", "")
@@ -1473,11 +1529,11 @@ class KdeSyncGUI(QMainWindow):
             if last_auto:
                 try:
                     dt = datetime.fromisoformat(last_auto)
-                    self.lbl_last_auto_val.setText(dt.strftime("%d.%m.%Y %H:%M:%S"))
+                    self.lbl_last_auto_val.setText(dt.strftime(self.tr("%d.%m.%Y %H:%M:%S")))
                 except Exception:
                     self.lbl_last_auto_val.setText(last_auto)
             else:
-                self.lbl_last_auto_val.setText("Nie")
+                self.lbl_last_auto_val.setText(self.tr("Nie"))
 
         # Verify the sync directory exists
         backup_dir = self.config.get("backup_dir", "")
@@ -1485,12 +1541,12 @@ class KdeSyncGUI(QMainWindow):
             # Nicht anlegen: Ist der Cloud-Ordner gerade nicht eingehängt, entstünde ein
             # lokaler Leerordner, der später mit dem Sync kollidiert. Das erste Backup
             # legt den Ordner selbst an (start_backup).
-            self.lbl_status_val.setText("Backup-Ordner existiert nicht (wird beim ersten Backup angelegt)")
+            self.lbl_status_val.setText(self.tr("Backup-Ordner existiert nicht (wird beim ersten Backup angelegt)"))
             self.lbl_status_val.setStyleSheet("color: #e0a030;")
             return
 
 
-        self.lbl_status_val.setText("Bereit (Ordner wird überwacht)")
+        self.lbl_status_val.setText(self.tr("Bereit (Ordner wird überwacht)"))
         self.lbl_status_val.setStyleSheet("color: #2ecc71;")
         if hasattr(self, "fs_watcher") and backup_dir not in self.fs_watcher.directories():
             self.setup_fs_watcher()
@@ -1517,11 +1573,11 @@ class KdeSyncGUI(QMainWindow):
         files = self.get_backup_files()
         self.refresh_backup_list()
         if not files:
-            self.lbl_newest_backup_val.setText("Keine Backups im Sync-Ordner gefunden")
+            self.lbl_newest_backup_val.setText(self.tr("Keine Backups im Sync-Ordner gefunden"))
             if manual:
                 QMessageBox.information(
-                    self, "Update-Check", 
-                    "Es wurden keine Backups im konfigurierten Ordner gefunden."
+                    self, self.tr("Update-Check"),
+                    self.tr("Es wurden keine Backups im konfigurierten Ordner gefunden.")
                 )
             return
 
@@ -1534,7 +1590,7 @@ class KdeSyncGUI(QMainWindow):
         try:
             import time
             if time.time() - os.path.getmtime(latest_path) < 30:
-                self.lbl_newest_backup_val.setText(f"{latest_backup} (wird synchronisiert …)")
+                self.lbl_newest_backup_val.setText(self.tr("{filename} (wird synchronisiert …)").format(filename=latest_backup))
                 QTimer.singleShot(45000, self.background_update_check)
                 return
         except OSError:
@@ -1556,8 +1612,8 @@ class KdeSyncGUI(QMainWindow):
                 if self.config.get("auto_restore_enabled", False):
                     if self.tray_icon.isVisible():
                         self.tray_icon.showMessage(
-                            "Neuer Snapshot gefunden",
-                            f"Neuer Snapshot gefunden. Spiele '{latest_backup}' automatisch ein …",
+                            self.tr("Neuer Snapshot gefunden"),
+                            self.tr("Neuer Snapshot gefunden. Spiele '{filename}' automatisch ein …").format(filename=latest_backup),
                             QSystemTrayIcon.MessageIcon.Information,
                             5000
                         )
@@ -1569,18 +1625,18 @@ class KdeSyncGUI(QMainWindow):
 
                     if self.tray_icon.isVisible():
                         self.tray_icon.showMessage(
-                            "Neuer Snapshot gefunden",
-                            f"Neuer Snapshot gefunden: '{latest_backup}'. Jetzt einspielen?",
+                            self.tr("Neuer Snapshot gefunden"),
+                            self.tr("Neuer Snapshot gefunden: '{filename}'. Jetzt einspielen?").format(filename=latest_backup),
                             QSystemTrayIcon.MessageIcon.Information,
                             7000
                         )
 
                     # Show Prompt dialog
                     btn = QMessageBox.question(
-                        self, "Neuer Snapshot gefunden",
-                        f"Es liegt ein neuer KDE-Snapshot in deinem Sync-Ordner vor:\n\n"
-                        f"Datei: {latest_backup}\n\n"
-                        f"Möchtest du diesen Snapshot jetzt einspielen?",
+                        self, self.tr("Neuer Snapshot gefunden"),
+                        self.tr("Es liegt ein neuer KDE-Snapshot in deinem Sync-Ordner vor:\n\n"
+                                "Datei: {filename}\n\n"
+                                "Möchtest du diesen Snapshot jetzt einspielen?").format(filename=latest_backup),
                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                     )
 
@@ -1590,13 +1646,13 @@ class KdeSyncGUI(QMainWindow):
                         # Nur für diese Sitzung zurückstellen
                         self.declined_this_session = latest_backup
                         self.status_bar_label.setText(
-                            f"Snapshot {latest_backup} nicht eingespielt."
+                            self.tr("Snapshot {filename} nicht eingespielt.").format(filename=latest_backup)
                         )
         else:
             if manual:
                 QMessageBox.information(
-                    self, "Update-Check", 
-                    "Deine KDE Plasma Einstellungen sind auf dem neuesten Stand!"
+                    self, self.tr("Update-Check"),
+                    self.tr("Deine KDE Plasma Einstellungen sind auf dem neuesten Stand!")
                 )
 
     def refresh_backup_list(self):
@@ -1616,7 +1672,7 @@ class KdeSyncGUI(QMainWindow):
 
     def browse_backup_dir(self):
         dir_path = QFileDialog.getExistingDirectory(
-            self, "Backup-Verzeichnis auswählen", 
+            self, self.tr("Backup-Verzeichnis auswählen"),
             self.txt_backup_dir.text()
         )
         if dir_path:
@@ -1625,12 +1681,13 @@ class KdeSyncGUI(QMainWindow):
     def save_settings(self):
         new_dir = self.txt_backup_dir.text().strip()
         if not new_dir:
-            QMessageBox.warning(self, "Fehler", "Bitte gib einen gültigen Pfad an.")
+            QMessageBox.warning(self, self.tr("Fehler"), self.tr("Bitte gib einen gültigen Pfad an."))
             return
 
         is_auto_enabled = self.chk_auto_snapshot.isChecked()
 
         self.config["backup_dir"] = new_dir
+        self.config["language"] = self.combo_language.currentData()
         self.config["autostart_enabled"] = self.chk_autostart.isChecked()
         self.config["periodic_check_enabled"] = self.chk_periodic.isChecked()
         self.config["check_interval_hours"] = int(self.spin_interval.value())
@@ -1654,17 +1711,19 @@ class KdeSyncGUI(QMainWindow):
             surplus = len(existing) - keep
             if surplus > 0:
                 answer = QMessageBox.question(
-                    self, "Alte Snapshots löschen?",
-                    f"Es liegen {len(existing)} Snapshots im Ordner, behalten werden {keep}.\n\n"
-                    f"Die {surplus} ältesten werden unwiderruflich gelöscht (auch im Cloud-Speicher, "
-                    f"auch wenn sie von einem anderen Rechner stammen). Fortfahren?",
+                    self, self.tr("Alte Snapshots löschen?"),
+                    self.tr("Es liegen %n Snapshots im Ordner, behalten werden {keep}.", None, len(existing)).format(keep=keep)
+                    + "\n\n" + self.tr(
+                        "Die %n ältesten Snapshots werden unwiderruflich gelöscht (auch im Cloud-Speicher, "
+                        "auch wenn sie von einem anderen Rechner stammen). Fortfahren?", None, surplus
+                    ),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                 )
                 if answer == QMessageBox.StandardButton.Yes:
                     try:
                         subprocess.run([SCRIPT_PATH, "prune", new_dir, str(keep)], check=False)
                     except Exception as e:
-                        print(f"Error during prune: {e}")
+                        print(self.tr("Error during prune: {error}").format(error=e))
                 else:
                     # Nicht löschen, und die Einstellung nicht stillschweigend übernehmen
                     self.config["keep_snapshots"] = max(keep, len(existing))
@@ -1682,12 +1741,12 @@ class KdeSyncGUI(QMainWindow):
         if is_auto_enabled and (dock_flag_changed or not self.config.get("last_fingerprint")):
             self.update_fingerprint_baseline_silently()
 
-        QMessageBox.information(self, "Erfolg", "Einstellungen wurden erfolgreich gespeichert.")
+        QMessageBox.information(self, self.tr("Erfolg"), self.tr("Einstellungen wurden erfolgreich gespeichert."))
 
     def copy_log_to_clipboard(self):
         clipboard = QApplication.clipboard()
         clipboard.setText(self.log_output.toPlainText())
-        self.status_bar_label.setText("Protokoll in die Zwischenablage kopiert.")
+        self.status_bar_label.setText(self.tr("Protokoll in die Zwischenablage kopiert."))
 
     # ----------------- EXECUTION RUNNERS -----------------
 
@@ -1716,18 +1775,20 @@ class KdeSyncGUI(QMainWindow):
         self.is_silent_backup = silent
 
         self.inline_log_output.clear()
-        mode_text = "Automatischer Hintergrund-Snapshot" if silent else "Backup"
-        msg = f"--- {mode_text}-Start am {datetime.now().strftime('%d.%m.%Y %H:%M:%S')} ---"
+        mode_text = self.tr("Automatischer Hintergrund-Snapshot") if silent else self.tr("Backup")
+        msg = self.tr("--- {mode}-Start am {date} ---").format(
+            mode=mode_text, date=datetime.now().strftime(self.tr("%d.%m.%Y %H:%M:%S"))
+        )
         self.inline_log_output.appendPlainText(msg)
 
         if not silent:
-            self.init_operation_ui("Backup wird erstellt...", BACKUP_STEPS)
+            self.init_operation_ui(self.tr("Backup wird erstellt..."), BACKUP_STEPS)
         
         backup_dir = self.config.get("backup_dir")
         os.makedirs(backup_dir, exist_ok=True)
 
         cmd = [SCRIPT_PATH, "backup"]
-        status_msg = "Erstelle automatischen Snapshot..." if silent else "Erstelle Backup..."
+        status_msg = self.tr("Erstelle automatischen Snapshot...") if silent else self.tr("Erstelle Backup...")
         self.set_operation_state(True, status_msg)
         
         self.runner = ScriptRunner(cmd, backup_dir)
@@ -1741,10 +1802,10 @@ class KdeSyncGUI(QMainWindow):
         self.is_silent_backup = False
 
         if returncode == 0:
-            self.inline_log_output.appendPlainText("\n--- Backup erfolgreich erstellt! ---")
-            self.status_bar_label.setText("Backup erfolgreich erstellt.")
+            self.inline_log_output.appendPlainText(self.tr("\n--- Backup erfolgreich erstellt! ---"))
+            self.status_bar_label.setText(self.tr("Backup erfolgreich erstellt."))
             if not is_silent:
-                self.on_progress_done("Backup erfolgreich erstellt!", "Das Backup wurde im Sync-Ordner abgelegt.")
+                self.on_progress_done(self.tr("Backup erfolgreich erstellt!"), self.tr("Das Backup wurde im Sync-Ordner abgelegt."))
             
             # Find the new file
             files = self.get_backup_files()
@@ -1773,7 +1834,7 @@ class KdeSyncGUI(QMainWindow):
                 try:
                     subprocess.run([SCRIPT_PATH, "prune", backup_dir, str(keep)], check=False)
                 except Exception as e:
-                    print(f"Error during prune: {e}")
+                    print(self.tr("Error during prune: {error}").format(error=e))
 
             config_manager.save_config(self.config)
             self.update_dashboard_ui()
@@ -1784,49 +1845,49 @@ class KdeSyncGUI(QMainWindow):
                     was = getattr(self, "pending_change_text", "")
                     self.pending_change_text = ""
                     text = (
-                        f"Snapshot angelegt — geändert wurde {was}."
-                        if was else "Automatischer Snapshot erfolgreich erstellt."
+                        self.tr("Snapshot angelegt — geändert wurde {changes}.").format(changes=was)
+                        if was else self.tr("Automatischer Snapshot erfolgreich erstellt.")
                     )
                     self.tray_icon.showMessage(
-                        "KDE Plasma Sync",
+                        self.tr("KDE Plasma Sync"),
                         text,
                         QSystemTrayIcon.MessageIcon.Information,
                         4000
                     )
             else:
                 QMessageBox.information(
-                    self, "Backup erfolgreich",
-                    "Dein KDE Plasma Backup wurde erstellt und im Sync-Ordner abgelegt.\n"
-                    "Dein Cloud-Client (Nextcloud, Google Drive, OneDrive, Syncthing, …) synchronisiert es automatisch."
+                    self, self.tr("Backup erfolgreich"),
+                    self.tr("Dein KDE Plasma Backup wurde erstellt und im Sync-Ordner abgelegt.\n"
+                    "Dein Cloud-Client (Nextcloud, Google Drive, OneDrive, Syncthing, …) synchronisiert es automatisch.")
                 )
         else:
-            self.inline_log_output.appendPlainText(f"\n--- Backup fehlgeschlagen (Exit Code: {returncode}) ---")
-            self.status_bar_label.setText("Backup fehlgeschlagen.")
+            self.inline_log_output.appendPlainText(self.tr("\n--- Backup fehlgeschlagen (Exit Code: {code}) ---").format(code=returncode))
+            self.status_bar_label.setText(self.tr("Backup fehlgeschlagen."))
             if not is_silent:
-                self.lbl_phase_icon.setText("❌")
-                self.lbl_phase_title.setText("Backup fehlgeschlagen")
-                self.lbl_phase_detail.setText("Ein Fehler ist aufgetreten. Klicke auf 'Protokoll anzeigen' für Details.")
+                self.lbl_phase_icon.setText(self.tr("❌"))
+                self.lbl_phase_title.setText(self.tr("Backup fehlgeschlagen"))
+                self.lbl_phase_detail.setText(self.tr("Ein Fehler ist aufgetreten. Klicke auf 'Protokoll anzeigen' für Details."))
                 self.btn_close_card.setVisible(True)
                 self.console_widget.setVisible(True)
-                self.btn_toggle_protocol.setText("▲ Protokoll ausblenden")
+                self.btn_toggle_protocol.setText(self.tr("▲ Protokoll ausblenden"))
             if is_silent:
                 if self.tray_icon.isVisible():
                     self.tray_icon.showMessage(
-                        "KDE Plasma Sync",
-                        "Automatischer Snapshot fehlgeschlagen. Bitte prüfe das Protokoll.",
+                        self.tr("KDE Plasma Sync"),
+                        self.tr("Automatischer Snapshot fehlgeschlagen. Bitte prüfe das Protokoll."),
                         QSystemTrayIcon.MessageIcon.Warning,
                         5000
                     )
             else:
                 QMessageBox.critical(
-                    self, "Backup fehlgeschlagen",
-                    "Das Erstellen des Backups ist fehlgeschlagen. Klicke auf 'Protokoll anzeigen' für Details."
+                    self, self.tr("Backup fehlgeschlagen"),
+                    self.tr("Das Erstellen des Backups ist fehlgeschlagen. Klicke auf 'Protokoll anzeigen' für Details.")
                 )
 
     def restore_latest_backup(self):
         files = self.get_backup_files()
         if not files:
-            QMessageBox.warning(self, "Keine Backups", "Es wurden keine Backups zum Wiederherstellen gefunden.")
+            QMessageBox.warning(self, self.tr("Keine Backups"), self.tr("Es wurden keine Backups zum Wiederherstellen gefunden."))
             return
         
         latest = files[-1]
@@ -1838,26 +1899,28 @@ class KdeSyncGUI(QMainWindow):
             
         if confirm:
             btn = QMessageBox.question(
-                self, "Backup wiederherstellen",
-                f"Möchtest du das Backup '{filename}' wirklich einspielen?\n\n"
-                f"WICHTIG: Dabei werden deine aktuellen Plasma-Einstellungen überschrieben "
-                f"und die Benutzeroberfläche (Plasmashell) wird neu gestartet.",
+                self, self.tr("Backup wiederherstellen"),
+                self.tr("Möchtest du das Backup '{filename}' wirklich einspielen?\n\n"
+                        "WICHTIG: Dabei werden deine aktuellen Plasma-Einstellungen überschrieben "
+                        "und die Benutzeroberfläche (Plasmashell) wird neu gestartet.").format(filename=filename),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if btn != QMessageBox.StandardButton.Yes:
                 return
 
         self.inline_log_output.clear()
-        msg = f"--- Restore-Start für {filename} am {datetime.now().strftime('%d.%m.%Y %H:%M:%S')} ---"
+        msg = self.tr("--- Restore-Start für {filename} am {date} ---").format(
+            filename=filename, date=datetime.now().strftime(self.tr("%d.%m.%Y %H:%M:%S"))
+        )
         self.inline_log_output.appendPlainText(msg)
 
-        self.init_operation_ui(f"Backup wird eingespielt: {filename}", RESTORE_STEPS)
+        self.init_operation_ui(self.tr("Backup wird eingespielt: {filename}").format(filename=filename), RESTORE_STEPS)
         
         backup_dir = self.config.get("backup_dir")
         filepath = os.path.join(backup_dir, filename)
 
         cmd = [SCRIPT_PATH, "restore", filepath]
-        self.set_operation_state(True, "Stelle Backup wieder her...")
+        self.set_operation_state(True, self.tr("Stelle Backup wieder her..."))
         
         # Ohne Rückfrage eingespielte Snapshots (Auto-Restore) installieren keine Pakete:
         # Ein Passwortdialog aus dem Nichts wäre das Gegenteil von "ohne Nachfrage".
@@ -1872,7 +1935,7 @@ class KdeSyncGUI(QMainWindow):
         """Bricht ein laufendes Backup oder Einspielen ab."""
         if self.runner and self.runner.isRunning():
             self.btn_cancel_op.setEnabled(False)
-            self.status_bar_label.setText("Breche ab …")
+            self.status_bar_label.setText(self.tr("Breche ab …"))
             self.runner.stop()
 
     def prompt_sudo_password(self):
@@ -1890,13 +1953,29 @@ class KdeSyncGUI(QMainWindow):
         cleaned = clean_ansi(text)
         for line in cleaned.splitlines():
             line_str = line.strip()
+            event = decode_progress(line_str)
+            if event is not None:
+                step, total, icon, phase, detail = event
+                if step is None:
+                    self.on_progress_done(phase, detail)
+                    self.inline_log_output.appendPlainText(
+                        self.tr("\n{icon} {phase}: {detail}").format(icon=icon, phase=phase, detail=detail)
+                    )
+                else:
+                    self.on_progress_step(step, total, phase, detail, icon=icon)
+                    self.inline_log_output.appendPlainText(
+                        self.tr("[{step}/{total}] {phase}: {detail}").format(
+                            step=step, total=total, phase=phase, detail=detail
+                        )
+                    )
+                continue
             if "::PROGRESS::" in line_str:
                 idx = line_str.find("::PROGRESS::")
                 marker = line_str[idx + len("::PROGRESS::"):]
                 parts = marker.split("::")
                 if len(parts) >= 2 and parts[0] == "DONE":
                     self.on_progress_done(parts[1], parts[2] if len(parts) > 2 else "")
-                    self.inline_log_output.appendPlainText(f"\n✅ {parts[1]}")
+                    self.inline_log_output.appendPlainText(self.tr("\n✅ {phase}").format(phase=parts[1]))
                 elif len(parts) >= 4:
                     try:
                         step = int(parts[0])
@@ -1904,7 +1983,11 @@ class KdeSyncGUI(QMainWindow):
                         phase = parts[2]
                         detail = parts[3]
                         self.on_progress_step(step, total, phase, detail)
-                        self.inline_log_output.appendPlainText(f"[{step}/{total}] {phase}: {detail}")
+                        self.inline_log_output.appendPlainText(
+                            self.tr("[{step}/{total}] {phase}: {detail}").format(
+                                step=step, total=total, phase=phase, detail=detail
+                            )
+                        )
                     except ValueError:
                         self.inline_log_output.appendPlainText(line_str)
             else:
@@ -1915,9 +1998,9 @@ class KdeSyncGUI(QMainWindow):
     def handle_restore_finished(self, returncode, filename):
         self.set_operation_state(False)
         if returncode == 0:
-            self.inline_log_output.appendPlainText("\n--- Backup erfolgreich wiederhergestellt! ---")
-            self.status_bar_label.setText("Restore erfolgreich durchgeführt.")
-            self.on_progress_done("Wiederherstellung erfolgreich!", "Alle Plasma-Einstellungen und Themes wurden geladen.")
+            self.inline_log_output.appendPlainText(self.tr("\n--- Backup erfolgreich wiederhergestellt! ---"))
+            self.status_bar_label.setText(self.tr("Restore erfolgreich durchgeführt."))
+            self.on_progress_done(self.tr("Wiederherstellung erfolgreich!"), self.tr("Alle Plasma-Einstellungen und Themes wurden geladen."))
             
             # Save state
             self.config["last_applied_backup"] = filename
@@ -1934,30 +2017,30 @@ class KdeSyncGUI(QMainWindow):
             QTimer.singleShot(quiet_seconds * 2 * 1000, self.update_fingerprint_baseline_silently)
 
             QMessageBox.information(
-                self, "Restore erfolgreich",
-                "KDE Plasma Backup wurde erfolgreich wiederhergestellt.\n\n"
+                self, self.tr("Restore erfolgreich"),
+                self.tr("KDE Plasma Backup wurde erfolgreich wiederhergestellt.\n\n"
                 "Bitte melde dich einmal vom System ab und wieder an, damit alle "
-                "Themes (Kvantum, GTK) vollständig angewendet werden!"
+                "Themes (Kvantum, GTK) vollständig angewendet werden!")
             )
         else:
-            self.inline_log_output.appendPlainText(f"\n--- Restore fehlgeschlagen (Exit Code: {returncode}) ---")
-            self.status_bar_label.setText("Restore fehlgeschlagen.")
-            self.lbl_phase_icon.setText("❌")
-            self.lbl_phase_title.setText("Wiederherstellung fehlgeschlagen")
-            self.lbl_phase_detail.setText("Ein Fehler ist aufgetreten. Klicke auf 'Protokoll anzeigen' für Details.")
+            self.inline_log_output.appendPlainText(self.tr("\n--- Restore fehlgeschlagen (Exit Code: {code}) ---").format(code=returncode))
+            self.status_bar_label.setText(self.tr("Restore fehlgeschlagen."))
+            self.lbl_phase_icon.setText(self.tr("❌"))
+            self.lbl_phase_title.setText(self.tr("Wiederherstellung fehlgeschlagen"))
+            self.lbl_phase_detail.setText(self.tr("Ein Fehler ist aufgetreten. Klicke auf 'Protokoll anzeigen' für Details."))
             self.btn_close_card.setVisible(True)
             self.console_widget.setVisible(True)
-            self.btn_toggle_protocol.setText("▲ Protokoll ausblenden")
+            self.btn_toggle_protocol.setText(self.tr("▲ Protokoll ausblenden"))
             QMessageBox.critical(
-                self, "Restore fehlgeschlagen",
-                "Die Wiederherstellung ist fehlgeschlagen. Klicke auf 'Protokoll anzeigen' für Details."
+                self, self.tr("Restore fehlgeschlagen"),
+                self.tr("Die Wiederherstellung ist fehlgeschlagen. Klicke auf 'Protokoll anzeigen' für Details.")
             )
 
     def delete_backup_prompt(self, filename):
         btn = QMessageBox.question(
-            self, "Backup löschen",
-            f"Möchtest du das Backup '{filename}' wirklich unwiderruflich aus dem Sync-Ordner löschen?\n\n"
-            f"Dein Cloud-Client entfernt es dann auch aus der Cloud.",
+            self, self.tr("Backup löschen"),
+            self.tr("Möchtest du das Backup '{filename}' wirklich unwiderruflich aus dem Sync-Ordner löschen?\n\n"
+                    "Dein Cloud-Client entfernt es dann auch aus der Cloud.").format(filename=filename),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if btn == QMessageBox.StandardButton.Yes:
@@ -1968,9 +2051,9 @@ class KdeSyncGUI(QMainWindow):
                     os.remove(filepath)
                 self.refresh_backup_list()
                 self.background_update_check() # Recalculate status
-                self.status_bar_label.setText(f"Backup {filename} gelöscht.")
+                self.status_bar_label.setText(self.tr("Backup {filename} gelöscht.").format(filename=filename))
             except Exception as e:
-                QMessageBox.critical(self, "Fehler", f"Konnte Datei nicht löschen: {e}")
+                QMessageBox.critical(self, self.tr("Fehler"), self.tr("Konnte Datei nicht löschen: {error}").format(error=e))
 
 
 def main():
@@ -1983,6 +2066,7 @@ def main():
     # Check if config says autostart is disabled, if we started minimized.
     # This prevents running in tray if user disabled it but desktop file was not deleted.
     config = config_manager.load_config()
+    install_translations(app, config.get("language", "system"))
     if autostart_check and not config.get("autostart_enabled", True):
         sys.exit(0)
 
@@ -1992,7 +2076,7 @@ def main():
         gui.show()
     else:
         # Just notify if running in background
-        print("KDE Plasma Backup GUI im Hintergrund gestartet.")
+        print(QCoreApplication.translate("Main", "KDE Plasma Backup GUI im Hintergrund gestartet."))
         
     sys.exit(app.exec())
 
